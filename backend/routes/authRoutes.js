@@ -5,7 +5,7 @@ const requireAdmin = require('../middleware/requireAdmin');
 const { createAdminToken } = require('../utils/token');
 const { verifyPassword } = require('../utils/password');
 
-router.post('/login', async (req, res) => {
+router.post('/login', async (req, res, next) => {
   try {
     const { username, password } = req.body;
 
@@ -15,8 +15,17 @@ router.post('/login', async (req, res) => {
 
     const admin = await Admin.unscoped().findOne({ where: { username } });
 
-    if (!admin || !admin.isActive || !(await verifyPassword(password, admin.passwordHash))) {
-      return res.status(401).json({ error: 'Invalid admin credentials' });
+    if (!admin) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (!admin.isActive) {
+      return res.status(403).json({ error: 'Admin account is inactive' });
+    }
+
+    const passwordValid = await verifyPassword(password, admin.passwordHash);
+    if (!passwordValid) {
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     await admin.update({ lastLoginAt: new Date() });
@@ -31,19 +40,23 @@ router.post('/login', async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
-router.get('/me', requireAdmin, (req, res) => {
-  res.json({
-    admin: {
-      id: req.admin.id,
-      username: req.admin.username,
-      fullName: req.admin.fullName,
-      lastLoginAt: req.admin.lastLoginAt,
-    },
-  });
+router.get('/me', requireAdmin, async (req, res, next) => {
+  try {
+    res.json({
+      admin: {
+        id: req.admin.id,
+        username: req.admin.username,
+        fullName: req.admin.fullName,
+        lastLoginAt: req.admin.lastLoginAt,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 module.exports = router;
