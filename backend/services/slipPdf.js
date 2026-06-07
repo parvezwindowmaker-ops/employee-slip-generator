@@ -82,135 +82,103 @@ function generateSalarySlipPDF(employeeRecord, periodRecord) {
     const pageWidth = doc.page.width - 80;
     const leftMargin = 40;
 
-    doc.fontSize(16).font('Helvetica-Bold').text(COMPANY_NAME, leftMargin, 40, {
+    doc.fontSize(14).font('Helvetica-Bold').text('NANDINI HERBAL CARE PVT LTD', leftMargin, 40, {
       align: 'center',
       width: pageWidth,
     });
 
-    doc.fontSize(10).font('Helvetica').text('Salary Slip', leftMargin, 60, {
+    doc.fontSize(8).font('Helvetica').text('S-201, SIGNATURE COMPLEX, ZYDUS HOSPITAL ROAD, THALTEJ, AHMEDABAD 380059', leftMargin, 55, {
       align: 'center',
       width: pageWidth,
     });
 
-    doc.fontSize(11).font('Helvetica-Bold').text(`Month: ${period.label}`, leftMargin, 78, {
+    doc.fontSize(10).font('Helvetica-Bold').text('SALARY SLIP', leftMargin, 85, {
       align: 'center',
       width: pageWidth,
+      underline: true
     });
 
-    doc.moveTo(leftMargin, 95).lineTo(leftMargin + pageWidth, 95).stroke();
-
-    let y = 108;
-    doc.fontSize(9).font('Helvetica-Bold');
+    let y = 115;
+    doc.fontSize(10).font('Helvetica-Bold');
 
     const col1 = leftMargin;
-    const col2 = leftMargin + 130;
-    const col3 = leftMargin + pageWidth / 2 + 10;
-    const col4 = leftMargin + pageWidth / 2 + 130;
+    const col2 = leftMargin + 100;
 
-    doc.text('Employee Name:', col1, y);
+    doc.text('Employee', col1, y);
+    y += 15;
+    doc.text('Name:', col1, y);
     doc.font('Helvetica').text(employee.employeeName, col2, y);
-    doc.font('Helvetica-Bold').text('Designation:', col3, y);
-    doc.font('Helvetica').text(String(employee.post || ''), col4, y);
-
-    y += 18;
-    doc.font('Helvetica-Bold').text('Department:', col1, y);
-    doc.font('Helvetica').text(String(employee.departmentGroup || ''), col2, y);
-    doc.font('Helvetica-Bold').text('PF Status:', col3, y);
-    doc.font('Helvetica').text(String(employee.pfStatus || 'N/A'), col4, y);
-
-    y += 18;
-    doc.font('Helvetica-Bold').text('UAN No.:', col1, y);
-    doc.font('Helvetica').text(String(employee.uanNumber || 'N/A'), col2, y);
-    doc.font('Helvetica-Bold').text('PAN:', col3, y);
-    doc.font('Helvetica').text(String(employee.pan || 'N/A'), col4, y);
-
-    y += 18;
-    doc.font('Helvetica-Bold').text('CTC (Monthly):', col1, y);
-    doc.font('Helvetica').text(`Rs. ${formatCurrency(employee.salaryAmount)}`, col2, y);
-    doc.font('Helvetica-Bold').text('Bank A/C:', col3, y);
-    doc.font('Helvetica').text(String(employee.bankAccount || 'N/A'), col4, y);
 
     y += 25;
-    doc.moveTo(leftMargin, y).lineTo(leftMargin + pageWidth, y).stroke();
-
-    y += 10;
-    doc.fontSize(10).font('Helvetica-Bold').text('ATTENDANCE', leftMargin, y, {
-      align: 'center',
-      width: pageWidth,
-    });
-
-    y += 18;
-    const attCol1 = leftMargin + 20;
-    const attCol2 = leftMargin + 140;
-    const attCol3 = leftMargin + 260;
-    const attCol4 = leftMargin + 380;
-
-    doc.fontSize(9).font('Helvetica-Bold');
-    doc.text('Present Days:', attCol1, y);
-    doc.font('Helvetica').text(String(employee.presentDays || 0), attCol2, y);
-    doc.font('Helvetica-Bold').text('Week Off:', attCol3, y);
-    doc.font('Helvetica').text(String(employee.weekOff || 0), attCol4, y);
-
-    y += 16;
-    doc.font('Helvetica-Bold').text('Other Allowance:', attCol1, y);
-    doc.font('Helvetica').text(String(employee.otherAllowanceDays || 0), attCol2, y);
-    doc.font('Helvetica-Bold').text('Total Days:', attCol3, y);
-    doc.font('Helvetica').text(String(employee.totalDays || 0), attCol4, y);
+    doc.font('Helvetica-Bold').text('Designation:', col1, y);
+    doc.font('Helvetica').text(String(employee.post || ''), col2, y);
 
     y += 25;
-    doc.moveTo(leftMargin, y).lineTo(leftMargin + pageWidth, y).stroke();
+    doc.font('Helvetica-Bold').text('Month & Year:', col1, y);
+    doc.font('Helvetica').text(String(period.label || ''), col2, y);
 
-    y += 10;
+    y += 35;
+    doc.font('Helvetica-Bold').text('No of Days:', col1, y);
+    doc.font('Helvetica').text(String(employee.totalDays || 0), col1 + 70, y);
+    
+    doc.font('Helvetica-Bold').text('Leaves:', leftMargin + pageWidth / 2, y);
+    const leaves = toNumber(employee.totalDays) - toNumber(employee.presentDays) - toNumber(employee.weekOff) - toNumber(employee.otherAllowanceDays);
+    const leavesStr = leaves > 0 ? String(leaves) : '0';
+    doc.font('Helvetica').text(leavesStr, leftMargin + pageWidth / 2 + 50, y);
+
+    y += 25;
     const tableLeft = leftMargin;
     const tableMid = leftMargin + pageWidth / 2;
 
     doc.fontSize(10).font('Helvetica-Bold');
-    doc.rect(tableLeft, y, pageWidth / 2, 20).fillAndStroke('#e8e8e8', '#000000');
-    doc.rect(tableMid, y, pageWidth / 2, 20).fillAndStroke('#e8e8e8', '#000000');
+    
+    doc.rect(tableLeft, y, pageWidth / 2, 20).stroke();
+    doc.rect(tableMid, y, pageWidth / 2, 20).stroke();
 
-    doc.fillColor('black');
-    doc.text('EARNINGS', tableLeft + 5, y + 5, { width: pageWidth / 2 - 10 });
-    doc.text('DEDUCTIONS', tableMid + 5, y + 5, { width: pageWidth / 2 - 10 });
+    doc.text('Earnings', tableLeft + 5, y + 5, { width: pageWidth / 2 - 10 });
+    doc.text('Deductions', tableMid + 5, y + 5, { width: pageWidth / 2 - 10 });
 
     y += 20;
 
     const earnings = [
       ['Basic', formatCurrency(employee.earningBasic || employee.basic)],
-      ['HRA', formatCurrency((toNumber(employee.hra) * toNumber(employee.totalDays)) / 30)],
-      ['Conveyance', formatCurrency((toNumber(employee.conveyance) * toNumber(employee.totalDays)) / 30)],
+      ['H.R.A', formatCurrency((toNumber(employee.hra) * toNumber(employee.totalDays)) / 30)],
+      ['Conv.', formatCurrency((toNumber(employee.conveyance) * toNumber(employee.totalDays)) / 30)],
       ['Medical', formatCurrency((toNumber(employee.medical) * toNumber(employee.totalDays)) / 30)],
-      ['Special Allowance', formatCurrency((toNumber(employee.specialAllowance) * toNumber(employee.totalDays)) / 30)],
-      ['Other Allowance', formatCurrency(employee.otherAllowance)],
     ];
 
     const deductions = [
-      ['PF (Employee 12%)', formatCurrency(employee.pfEmployee)],
-      ['ESI (Employee 0.75%)', formatCurrency(employee.esiEmployee)],
+      ['Provident Fund', formatCurrency(employee.pfEmployee)],
+      ['E.S.I.', formatCurrency(employee.esiEmployee)],
       ['Professional Tax', formatCurrency(employee.professionalTax)],
-      ['TDS', formatCurrency(employee.tds)],
-      ['Advance', formatCurrency(employee.advance)],
-      ['Meal', formatCurrency(employee.meal)],
-      ['Store', formatCurrency(employee.store)],
-      ['Other', formatCurrency(employee.otherDeduction)],
+      ['Loan', formatCurrency(employee.advance)],
+      ['TDS/IT', formatCurrency(employee.tds)],
     ];
 
     const maxRows = Math.max(earnings.length, deductions.length);
-    doc.fontSize(9).font('Helvetica');
+    doc.fontSize(10).font('Helvetica');
 
     for (let i = 0; i < maxRows; i += 1) {
-      const rowHeight = 16;
+      const rowHeight = 20;
+
+      doc.rect(tableLeft, y, pageWidth / 2, rowHeight).stroke();
+      doc.rect(tableMid, y, pageWidth / 2, rowHeight).stroke();
 
       if (i < earnings.length) {
-        doc.text(earnings[i][0], tableLeft + 5, y + 3);
-        doc.text(`Rs. ${earnings[i][1]}`, tableLeft + pageWidth / 2 - 85, y + 3, {
+        doc.text(earnings[i][0], tableLeft + 5, y + 5);
+        let val = earnings[i][1];
+        if (toNumber(val) === 0) val = '-';
+        doc.text(val, tableLeft + pageWidth / 2 - 85, y + 5, {
           width: 80,
           align: 'right',
         });
       }
 
       if (i < deductions.length) {
-        doc.text(deductions[i][0], tableMid + 5, y + 3);
-        doc.text(`Rs. ${deductions[i][1]}`, tableMid + pageWidth / 2 - 85, y + 3, {
+        doc.text(deductions[i][0], tableMid + 5, y + 5);
+        let val = deductions[i][1];
+        if (toNumber(val) === 0) val = '-';
+        doc.text(val, tableMid + pageWidth / 2 - 85, y + 5, {
           width: 80,
           align: 'right',
         });
@@ -219,69 +187,34 @@ function generateSalarySlipPDF(employeeRecord, periodRecord) {
       y += rowHeight;
     }
 
-    y += 5;
-    doc.moveTo(leftMargin, y).lineTo(leftMargin + pageWidth, y).stroke();
-    y += 5;
-
-    const totalDeduction =
-      toNumber(employee.pfEmployee) +
-      toNumber(employee.esiEmployee) +
-      toNumber(employee.professionalTax) +
-      toNumber(employee.tds) +
-      toNumber(employee.advance) +
-      toNumber(employee.meal) +
-      toNumber(employee.store) +
-      toNumber(employee.otherDeduction);
+    doc.rect(tableLeft, y, pageWidth / 2, 20).stroke();
+    doc.rect(tableMid, y, pageWidth / 2, 20).stroke();
 
     doc.font('Helvetica-Bold');
-    doc.text('Gross Earnings:', tableLeft + 5, y + 3);
-    doc.text(`Rs. ${formatCurrency(employee.gross)}`, tableLeft + pageWidth / 2 - 85, y + 3, {
-      width: 80,
-      align: 'right',
-    });
-    doc.text('Total Deductions:', tableMid + 5, y + 3);
-    doc.text(`Rs. ${formatCurrency(totalDeduction)}`, tableMid + pageWidth / 2 - 85, y + 3, {
-      width: 80,
+    doc.text('Total Addition', tableLeft + 5, y + 5);
+    doc.text(`RS. ${formatCurrency(employee.gross)}`, tableLeft + pageWidth / 2 - 105, y + 5, {
+      width: 100,
       align: 'right',
     });
 
-    y += 30;
-    doc.moveTo(leftMargin, y).lineTo(leftMargin + pageWidth, y).stroke();
-    y += 8;
-
-    doc.fontSize(12).font('Helvetica-Bold');
-    doc.text(`NET SALARY: Rs. ${formatCurrency(employee.netAmount)}`, leftMargin, y, {
-      align: 'center',
-      width: pageWidth,
+    doc.text('Paid Salary', tableMid + 5, y + 5);
+    doc.text(formatCurrency(employee.netAmount), tableMid + pageWidth / 2 - 85, y + 5, {
+      width: 80,
+      align: 'right',
     });
 
-    y += 25;
-    doc.fontSize(9).font('Helvetica');
-    doc.text(`(${numberToWords(Math.round(toNumber(employee.netAmount)))})`, leftMargin, y, {
-      align: 'center',
-      width: pageWidth,
+    y += 20;
+
+    doc.rect(tableLeft, y, pageWidth / 2, 20).stroke();
+    doc.rect(tableMid, y, pageWidth / 2, 20).stroke();
+
+    doc.font('Helvetica');
+    doc.text('Incentive', tableLeft + 5, y + 5);
+    let incentive = formatCurrency(employee.otherAllowance || employee.specialAllowance || 0);
+    doc.text(incentive, tableLeft + pageWidth / 2 - 85, y + 5, {
+      width: 80,
+      align: 'right',
     });
-
-    y += 50;
-    doc.moveTo(leftMargin, y).lineTo(leftMargin + pageWidth, y).stroke();
-    y += 10;
-
-    doc.fontSize(8).font('Helvetica');
-    doc.text('This is a computer-generated salary slip and does not require a signature.', leftMargin, y, {
-      align: 'center',
-      width: pageWidth,
-    });
-
-    if (toNumber(employee.pfEmployer) > 0 || toNumber(employee.esiEmployer) > 0) {
-      y += 20;
-      doc.fontSize(7).font('Helvetica');
-      doc.text(
-        `Employer Contribution - PF (13%): Rs. ${formatCurrency(employee.pfEmployer)} | ESI (3.25%): Rs. ${formatCurrency(employee.esiEmployer)}`,
-        leftMargin,
-        y,
-        { align: 'center', width: pageWidth },
-      );
-    }
 
     doc.end();
   });
