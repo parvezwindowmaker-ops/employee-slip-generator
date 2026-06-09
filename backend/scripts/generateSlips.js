@@ -110,83 +110,73 @@ function generateSalarySlipPDF(employee, monthYear, outputPath) {
     const pageWidth = doc.page.width - 80;
     const leftMargin = 40;
 
-    doc
-      .fontSize(14)
-      .font("Helvetica-Bold")
-      .text("NANDINI HERBAL CARE PVT LTD", leftMargin, 40, {
-        align: "center",
-        width: pageWidth,
-      });
+    doc.fontSize(16).font('Helvetica-Bold').fillColor('#000').text(COMPANY_NAME, leftMargin, 40, {
+      align: 'center',
+      width: pageWidth,
+    });
 
-    doc
-      .fontSize(8)
-      .font("Helvetica")
-      .text(
-        "S-201, SIGNATURE COMPLEX, ZYDUS HOSPITAL ROAD, THALTEJ, AHMEDABAD 380059",
-        leftMargin,
-        55,
-        {
-          align: "center",
-          width: pageWidth,
-        }
-      );
+    doc.fontSize(9).font('Helvetica').fillColor('#666').text('S-201, SIGNATURE COMPLEX, ZYDUS HOSPITAL ROAD, THALTEJ, AHMEDABAD 380059', leftMargin, 60, {
+      align: 'center',
+      width: pageWidth,
+    });
 
-    doc
-      .fontSize(10)
-      .font("Helvetica-Bold")
-      .text("SALARY SLIP", leftMargin, 85, {
-        align: "center",
-        width: pageWidth,
-        underline: true,
-      });
+    doc.moveTo(leftMargin, 90).lineTo(leftMargin + pageWidth, 90).stroke('#cccccc');
 
-    let y = 115;
+    doc.fontSize(12).font('Helvetica-Bold').fillColor('#000').text('PAYROLL - SALARY SLIP', leftMargin, 98, {
+      align: 'center',
+      width: pageWidth,
+    });
+
+    let y = 130;
     doc.fontSize(10).font("Helvetica-Bold");
 
     const col1 = leftMargin;
-    const col2 = leftMargin + 100;
+    const col2 = leftMargin + 140;
+    const labelWidth = 130;
+    const valueColStart = col2;
+    const colWidth = pageWidth / 2 - 16;
 
-    doc.text("Employee", col1, y);
+    doc.fontSize(10).font('Helvetica-Bold').text("Employee", col1, y);
     y += 15;
-    doc.text("Name:", col1, y);
-    doc.font("Helvetica").text(employee.name, col2, y);
+    doc.fontSize(10).font('Helvetica-Bold').text("Name:", col1, y);
+    doc.fontSize(10).font('Helvetica').text(employee.name, valueColStart, y);
 
     y += 25;
     doc.font("Helvetica-Bold").text("Designation:", col1, y);
-    doc.font("Helvetica").text(String(employee.post || ""), col2, y);
+    doc.font("Helvetica").text(String(employee.post || ""), valueColStart, y);
 
     y += 25;
     const [month, year] = monthYear.split("-");
     const monthFormatted = month.substring(0, 3).toUpperCase();
     doc.font("Helvetica-Bold").text("Month & Year:", col1, y);
-    doc.font("Helvetica").text(`${monthFormatted}-${year.substring(2)}`, col2, y);
+    doc.font("Helvetica").text(`${monthFormatted}-${year.substring(2)}`, valueColStart, y);
 
     y += 35;
-    doc.font("Helvetica-Bold").text("No of Days:", col1, y);
-    doc.font("Helvetica").text(String(employee.totalDays || 0), col1 + 70, y);
+    doc.fontSize(10).font('Helvetica-Bold').text("No of Days:", col1, y);
+    doc.fontSize(10).font('Helvetica').text(String(employee.totalDays || 0), valueColStart, y);
 
-    doc.font("Helvetica-Bold").text("Leaves:", leftMargin + pageWidth / 2, y);
+    doc.fontSize(10).font('Helvetica-Bold').text("Leaves:", leftMargin + pageWidth / 2, y);
     const leaves =
       Number(employee.totalDays || 0) -
       Number(employee.presentDays || 0) -
       Number(employee.weekOff || 0) -
       Number(employee.otherAllowanceDays || 0);
     const leavesStr = leaves > 0 ? String(leaves) : "0";
-    doc.font("Helvetica").text(leavesStr, leftMargin + pageWidth / 2 + 50, y);
+    doc.fontSize(10).font('Helvetica').text(leavesStr, leftMargin + pageWidth / 2 + 8, y);
 
     y += 25;
     const tableLeft = leftMargin;
     const tableMid = leftMargin + pageWidth / 2;
 
-    doc.fontSize(10).font("Helvetica-Bold");
+    doc.fontSize(10).font('Helvetica-Bold');
 
-    doc.rect(tableLeft, y, pageWidth / 2, 20).stroke();
-    doc.rect(tableMid, y, pageWidth / 2, 20).stroke();
+    doc.rect(tableLeft, y, pageWidth / 2, 22).fill('#F3F3F3').stroke();
+    doc.rect(tableMid, y, pageWidth / 2, 22).fill('#F3F3F3').stroke();
 
-    doc.text("Earnings", tableLeft + 5, y + 5, { width: pageWidth / 2 - 10 });
-    doc.text("Deductions", tableMid + 5, y + 5, { width: pageWidth / 2 - 10 });
+    doc.fillColor('#000').text('Earnings', tableLeft + 8, y + 6, { width: pageWidth / 2 - 16 });
+    doc.text('Deductions', tableMid + 8, y + 6, { width: pageWidth / 2 - 16 });
 
-    y += 20;
+    y += 22;
 
     const earnings = [
       ["Basic", formatCurrency(employee.earningBasic || employee.basic)],
@@ -222,62 +212,59 @@ function generateSalarySlipPDF(employee, monthYear, outputPath) {
       doc.rect(tableMid, y, pageWidth / 2, rowHeight).stroke();
 
       if (i < earnings.length) {
-        doc.text(earnings[i][0], tableLeft + 5, y + 5);
+        doc.text(earnings[i][0], tableLeft + 8, y + 5);
         let val = earnings[i][1];
-        if (Number(val) === 0) val = "-";
-        doc.text(val, tableLeft + pageWidth / 2 - 85, y + 5, {
-          width: 80,
-          align: "right",
-        });
+        if (Number(val) === 0) val = '-';
+        doc.text(val, tableLeft + 8, y + 5, { width: colWidth, align: 'right' });
       }
 
       if (i < deductions.length) {
-        doc.text(deductions[i][0], tableMid + 5, y + 5);
+        doc.text(deductions[i][0], tableMid + 8, y + 5);
         let val = deductions[i][1];
-        if (Number(val) === 0) val = "-";
-        doc.text(val, tableMid + pageWidth / 2 - 85, y + 5, {
-          width: 80,
-          align: "right",
-        });
+        if (Number(val) === 0) val = '-';
+        doc.text(val, tableMid + 8, y + 5, { width: colWidth, align: 'right' });
       }
 
       y += rowHeight;
     }
 
-    doc.rect(tableLeft, y, pageWidth / 2, 20).stroke();
-    doc.rect(tableMid, y, pageWidth / 2, 20).stroke();
+    doc.rect(tableLeft, y, pageWidth / 2, 22).fill('#F9F9F9').stroke();
+    doc.rect(tableMid, y, pageWidth / 2, 22).fill('#F9F9F9').stroke();
 
-    doc.font("Helvetica-Bold");
-    doc.text("Total Addition", tableLeft + 5, y + 5);
-    doc.text(
-      `RS. ${formatCurrency(employee.grossEarnings)}`,
-      tableLeft + pageWidth / 2 - 105,
-      y + 5,
-      { width: 100, align: "right" }
-    );
+    doc.font('Helvetica-Bold');
+    doc.text('Total Addition', tableLeft + 8, y + 6);
+    doc.text(`Rs. ${formatCurrency(employee.grossEarnings)}`, tableLeft + 8, y + 6, { width: colWidth, align: 'right' });
 
-    doc.text("Paid Salary", tableMid + 5, y + 5);
-    doc.text(
-      formatCurrency(employee.netAmount),
-      tableMid + pageWidth / 2 - 85,
-      y + 5,
-      { width: 80, align: "right" }
-    );
+    doc.text('Paid Salary', tableMid + 8, y + 6);
+    doc.text(formatCurrency(employee.netAmount), tableMid + 8, y + 6, { width: colWidth, align: 'right' });
 
-    y += 20;
+    y += 26;
 
     doc.rect(tableLeft, y, pageWidth / 2, 20).stroke();
     doc.rect(tableMid, y, pageWidth / 2, 20).stroke();
 
-    doc.font("Helvetica");
-    doc.text("Incentive", tableLeft + 5, y + 5);
-    let incentive = formatCurrency(
-      employee.otherAllowance || employee.specialAllowance || 0
-    );
-    doc.text(incentive, tableLeft + pageWidth / 2 - 85, y + 5, {
-      width: 80,
-      align: "right",
-    });
+    doc.fontSize(10).font('Helvetica');
+    doc.text('Incentive', tableLeft + 8, y + 5);
+    let incentive = formatCurrency(employee.otherAllowance || employee.specialAllowance || 0);
+    doc.text(incentive, tableLeft + 8, y + 5, { width: colWidth, align: 'right' });
+
+    // Emphasize net pay box on the right
+    const netBoxW = 160;
+    const netBoxH = 50;
+    const netBoxX = leftMargin + pageWidth - netBoxW;
+    const netBoxY = y + 40;
+
+    doc.rect(netBoxX, netBoxY, netBoxW, netBoxH).fill('#F3F7FF').stroke();
+    doc.fillColor('#000').font('Helvetica-Bold').fontSize(12).text('Net Pay', netBoxX + 10, netBoxY + 8);
+    doc.fontSize(14).text(`Rs. ${formatCurrency(employee.netAmount)}`, netBoxX + 10, netBoxY + 25, { align: 'left' });
+
+    // Signature area
+    const sigY = netBoxY + netBoxH + 30;
+    doc.moveTo(leftMargin, sigY).lineTo(leftMargin + 150, sigY).stroke();
+    doc.text('Employee Signature', leftMargin, sigY + 6, { width: 150, align: 'left' });
+
+    doc.moveTo(leftMargin + pageWidth - 200, sigY).lineTo(leftMargin + pageWidth - 40, sigY).stroke();
+    doc.text('Authorized Signatory', leftMargin + pageWidth - 200, sigY + 6, { width: 160, align: 'center' });
 
     doc.end();
     stream.on("finish", resolve);
