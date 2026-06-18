@@ -49,9 +49,41 @@ function getPlainRecord(record) {
   return typeof record.toJSON === 'function' ? record.toJSON() : record;
 }
 
-function generateSalarySlipPDF(employeeRecord, periodRecord) {
+/**
+ * Accepts either a Buffer or a base64 data URL string and returns a Buffer that
+ * PDFKit can embed, or null when the input is missing/unrecognized.
+ */
+function normalizeSignature(signature) {
+  if (!signature) return null;
+  if (Buffer.isBuffer(signature)) return signature;
+
+  if (typeof signature === 'string') {
+    const match = signature.match(/^data:image\/[a-zA-Z+]+;base64,(.+)$/);
+    if (match) {
+      try {
+        return Buffer.from(match[1], 'base64');
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * @param {object} employeeRecord
+ * @param {object} periodRecord
+ * @param {object} [options]
+ * @param {boolean} [options.includeSignature] - whether to print the authorized signature
+ * @param {Buffer|string} [options.signature] - signature image (Buffer or base64 data URL)
+ */
+function generateSalarySlipPDF(employeeRecord, periodRecord, options = {}) {
   const employee = getPlainRecord(employeeRecord);
   const period = getPlainRecord(periodRecord);
+
+  const signatureBuffer = options.includeSignature ? normalizeSignature(options.signature) : null;
+  const includeSignature = Boolean(signatureBuffer);
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
@@ -246,16 +278,39 @@ function generateSalarySlipPDF(employeeRecord, periodRecord) {
 
     y += 90;
 
-    // Signatures
-    doc.fillColor('#0f172a');
-    doc.moveTo(leftMargin, y).lineTo(leftMargin + 140, y).stroke('#cbd5e1');
-    doc.fontSize(10).font('Helvetica-Bold').text('Employee Signature', leftMargin, y + 10, { width: 140, align: 'center' });
+    // Signature area (Authorized Signatory only — employee signature removed)
+    const sigBlockW = 160;
+    const sigBlockX = tableRight - sigBlockW;
 
-    doc.moveTo(tableRight - 140, y).lineTo(tableRight, y).stroke('#cbd5e1');
-    doc.text('Authorized Signatory', tableRight - 140, y + 10, { width: 140, align: 'center' });
+    if (includeSignature) {
+      // Draw the uploaded signature image above the line, centered in the block
+      const imgMaxW = 130;
+      const imgMaxH = 48;
+      try {
+        doc.image(signatureBuffer, sigBlockX + (sigBlockW - imgMaxW) / 2, y - imgMaxH - 2, {
+          fit: [imgMaxW, imgMaxH],
+          align: 'center',
+          valign: 'bottom',
+        });
+      } catch {
+        // If the image can't be embedded, fall back to just the line + label
+      }
 
-    // Footer note
-    doc.fontSize(8).font('Helvetica').fillColor('#94a3b8').text('This is a computer-generated document. No signature is required.', leftMargin, doc.page.height - 40, { align: 'center', width: pageWidth });
+      doc.fillColor('#0f172a');
+      doc.moveTo(sigBlockX, y).lineTo(tableRight, y).stroke('#cbd5e1');
+      doc.fontSize(10).font('Helvetica-Bold').text('Authorized Signatory', sigBlockX, y + 8, {
+        width: sigBlockW,
+        align: 'center',
+      });
+    } else {
+      // No signature requested — note that the slip is computer generated
+      doc.fontSize(9).font('Helvetica-Oblique').fillColor('#64748b').text(
+        'This is a computer-generated salary slip and does not require a signature.',
+        leftMargin,
+        y + 6,
+        { align: 'center', width: pageWidth },
+      );
+    }
 
     doc.end();
   });

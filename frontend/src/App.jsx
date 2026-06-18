@@ -98,6 +98,15 @@ function App() {
   const [uploading, setUploading] = useState(false)
   const [downloading, setDownloading] = useState(false)
 
+  /* ─── Signature settings ─── */
+  const [signatureMode, setSignatureMode] = useState(
+    () => (localStorage.getItem('signatureMode') === 'with' ? 'with' : 'without'),
+  )
+  const [signatureImage, setSignatureImage] = useState(null)
+  const [signatureFile, setSignatureFile] = useState(null)
+  const [signatureLoading, setSignatureLoading] = useState(false)
+  const [signatureUploading, setSignatureUploading] = useState(false)
+
   /* ─── Pagination state ─── */
   const [currentPage, setCurrentPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(DEFAULT_ROWS_PER_PAGE)
@@ -164,6 +173,8 @@ function App() {
     setPeriods([])
     setSelectedPeriodId('')
     setSlips([])
+    setSignatureImage(null)
+    setSignatureFile(null)
     setError(message)
     setCredentials((current) => ({ ...current, password: '' }))
   }
@@ -273,6 +284,35 @@ function App() {
     loadSlips()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPeriodId, token])
+
+  /* ─── Persist signature mode ─── */
+  useEffect(() => {
+    localStorage.setItem('signatureMode', signatureMode)
+  }, [signatureMode])
+
+  /* ─── Load stored signature once authenticated ─── */
+  useEffect(() => {
+    if (!token) return
+
+    async function loadSignature() {
+      setSignatureLoading(true)
+      try {
+        const response = await apiRequest('/settings/signature')
+        const data = requireJsonPayload(await readResponse(response))
+        setSignatureImage(data.signature || null)
+      } catch (loadError) {
+        // Non-fatal: a missing signature shouldn't block the dashboard
+        if (loadError.status !== 401) {
+          setSignatureImage(null)
+        }
+      } finally {
+        setSignatureLoading(false)
+      }
+    }
+
+    loadSignature()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
 
   async function handleLogin(event) {
     event.preventDefault()
@@ -440,13 +480,19 @@ function App() {
   }
 
   function handleDownloadOne(slip) {
+    if (!ensureSignatureReady()) return
+
+    const params = new URLSearchParams()
+    params.set('includeSignature', signatureMode === 'with' ? 'true' : 'false')
     downloadFile(
-      `/payroll-periods/${selectedPeriodId}/slips/${slip.id}/pdf`,
+      `/payroll-periods/${selectedPeriodId}/slips/${slip.id}/pdf?${params.toString()}`,
       `${slip.employeeName}_Salary_Slip.pdf`,
     )
   }
 
   function handleDownloadFiltered() {
+    if (!ensureSignatureReady()) return
+
     const params = new URLSearchParams()
 
     if (selectedEmployeeId) {
@@ -454,6 +500,8 @@ function App() {
     } else if (employeeSearch.trim()) {
       params.set('search', employeeSearch.trim())
     }
+
+    params.set('includeSignature', signatureMode === 'with' ? 'true' : 'false')
 
     const query = params.toString()
     downloadFile(
@@ -488,11 +536,92 @@ function App() {
       return
     }
 
+    if (!ensureSignatureReady()) return
+
     const ids = Array.from(multiPeriodIds).join(',')
+    const includeSignature = signatureMode === 'with' ? 'true' : 'false'
     downloadFile(
-      `/payroll-periods/slips/multi-period-download?employeeName=${encodeURIComponent(multiEmployee)}&periodIds=${ids}`,
+      `/payroll-periods/slips/multi-period-download?employeeName=${encodeURIComponent(multiEmployee)}&periodIds=${ids}&includeSignature=${includeSignature}`,
       `${multiEmployee}_Multi_Period_Slips.zip`,
     )
+  }
+
+  /* ─── Signature management ─── */
+
+  /* Guards downloads: if "with signature" is chosen but none is uploaded, send
+     the user to the Signature tab instead of producing an unsigned slip. */
+  function ensureSignatureReady() {
+    if (signatureMode === 'with' && !signatureImage) {
+      setError('No signature uploaded yet. Upload one in the Signature tab, or switch to "Computer-generated".')
+      setActiveTab('signature')
+      return false
+    }
+    return true
+  }
+
+  async function handleSignatureUpload(event) {
+    event.preventDefault()
+
+    if (!signatureFile) {
+      setError('Please select a signature image to upload.')
+      return
+    }
+
+    if (!/\.(png|jpe?g)$/i.test(signatureFile.name)) {
+      setError('Invalid file type. Only PNG or JPEG images are supported.')
+      return
+    }
+
+    if (signatureFile.size > 2 * 1024 * 1024) {
+      setError('Signature image is too large. Maximum allowed size is 2 MB.')
+      return
+    }
+
+    const form = event.currentTarget
+
+    setSignatureUploading(true)
+    setError('')
+    setNotice('')
+
+    const formData = new FormData()
+    formData.append('signature', signatureFile)
+
+    try {
+      const response = await apiRequest('/settings/signature', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = requireJsonPayload(await readResponse(response))
+
+      setSignatureImage(data.signature || null)
+      setSignatureFile(null)
+      form.reset()
+      setNotice('Signature saved. It will appear on slips when "Include authorized signature" is selected.')
+    } catch (uploadError) {
+      if (uploadError.status !== 401) {
+        setError(uploadError.message)
+      }
+    } finally {
+      setSignatureUploading(false)
+    }
+  }
+
+  async function handleSignatureRemove() {
+    setSignatureUploading(true)
+    setError('')
+    setNotice('')
+
+    try {
+      await apiRequest('/settings/signature', { method: 'DELETE' })
+      setSignatureImage(null)
+      setNotice('Signature removed.')
+    } catch (removeError) {
+      if (removeError.status !== 401) {
+        setError(removeError.message)
+      }
+    } finally {
+      setSignatureUploading(false)
+    }
   }
 
   /* ═══════════════════════════════════════
@@ -598,6 +727,29 @@ function App() {
       </main>
     )
   }
+
+  /* Compact, read-only reminder of the active signature mode, with a shortcut
+     to the Signature tab. Shown above the download actions. */
+  const signatureHint = (
+    <div className="signature-hint">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 17c3-3 5-3 7 0s4 3 7-2" />
+        <path d="M14 7l3 3" />
+      </svg>
+      <span>
+        Slips download{' '}
+        <strong>
+          {signatureMode === 'with'
+            ? 'with the authorized signature'
+            : 'as computer-generated (no signature)'}
+        </strong>
+        .
+      </span>
+      <button type="button" className="link-button" onClick={() => setActiveTab('signature')}>
+        Change
+      </button>
+    </div>
+  )
 
   /* ═══════════════════════════════════════
      MAIN DASHBOARD
@@ -719,6 +871,18 @@ function App() {
             <line x1="12" y1="15" x2="12" y2="3" />
           </svg>
           Bulk Download
+        </button>
+        <button
+          type="button"
+          className={`tab-btn ${activeTab === 'signature' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('signature')}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 17c3-3 5-3 7 0s4 3 7-2" />
+            <path d="M14 7l3 3" />
+            <path d="M3 21h18" />
+          </svg>
+          Signature
         </button>
       </nav>
 
@@ -859,6 +1023,8 @@ function App() {
               <strong>{formatMoney(filteredNetPay)}</strong>
             </div>
           </section>
+
+          {signatureHint}
         </div>
       )}
 
@@ -1022,6 +1188,8 @@ function App() {
                   ))}
                 </div>
 
+                {signatureHint}
+
                 <button
                   type="button"
                   className="primary-button"
@@ -1043,6 +1211,97 @@ function App() {
                   )}
                 </button>
               </>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════
+         TAB: SIGNATURE
+         ═══════════════════════════════════════ */}
+      {activeTab === 'signature' && (
+        <div className="tab-content">
+          <section className="signature-panel glass-card">
+            <div className="panel-heading">
+              <p className="eyebrow">Slip Signature</p>
+              <h2>Signature Settings</h2>
+            </div>
+
+            <label htmlFor="signature-mode">
+              Signature on salary slips
+              <select
+                id="signature-mode"
+                value={signatureMode}
+                onChange={(event) => setSignatureMode(event.target.value)}
+              >
+                <option value="without">Computer-generated (no signature)</option>
+                <option value="with">Include authorized signature</option>
+              </select>
+              <small>
+                {signatureMode === 'with'
+                  ? 'Slips will display the uploaded authorized signature above the signatory line.'
+                  : 'Slips will show a note that the document is computer-generated and needs no signature.'}
+              </small>
+            </label>
+
+            {signatureMode === 'with' && (
+              <div className="signature-manager">
+                <div className="signature-preview-box">
+                  <span className="signature-preview-label">Current signature</span>
+                  {signatureLoading ? (
+                    <p className="signature-empty-text">Loading…</p>
+                  ) : signatureImage ? (
+                    <img
+                      src={signatureImage}
+                      alt="Authorized signature"
+                      className="signature-preview-img"
+                    />
+                  ) : (
+                    <p className="signature-empty-text">No signature uploaded yet.</p>
+                  )}
+
+                  {signatureImage && !signatureLoading && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleSignatureRemove}
+                      disabled={signatureUploading}
+                    >
+                      Remove signature
+                    </button>
+                  )}
+                </div>
+
+                <form className="signature-upload-form" onSubmit={handleSignatureUpload}>
+                  <label htmlFor="signature-file">
+                    {signatureImage ? 'Replace signature' : 'Upload signature'}{' '}
+                    <span className="required" aria-label="required">*</span>
+                    <input
+                      id="signature-file"
+                      type="file"
+                      accept=".png,.jpg,.jpeg"
+                      onChange={(event) => setSignatureFile(event.target.files?.[0] || null)}
+                      disabled={signatureUploading}
+                    />
+                    <small>Accepted: PNG or JPEG up to 2 MB. A transparent PNG works best.</small>
+                  </label>
+
+                  <button
+                    type="submit"
+                    className="primary-button"
+                    disabled={signatureUploading || !signatureFile}
+                    aria-busy={signatureUploading}
+                  >
+                    {signatureUploading ? (
+                      <>
+                        <span className="btn-spinner"></span> Saving…
+                      </>
+                    ) : (
+                      'Save signature'
+                    )}
+                  </button>
+                </form>
+              </div>
             )}
           </section>
         </div>

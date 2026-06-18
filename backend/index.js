@@ -5,6 +5,7 @@ const { sequelize } = require('./models');
 const employeeRoutes = require('./routes/employeeRoutes');
 const authRoutes = require('./routes/authRoutes');
 const payrollPeriodRoutes = require('./routes/payrollPeriodRoutes');
+const settingsRoutes = require('./routes/settingsRoutes');
 const seedDefaultAdmin = require('./services/adminSeed');
 
 const app = express();
@@ -28,6 +29,7 @@ app.use(express.static('public'));
 app.use('/api/auth', authRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/payroll-periods', payrollPeriodRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

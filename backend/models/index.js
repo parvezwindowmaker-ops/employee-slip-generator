@@ -2,6 +2,7 @@ const sequelize = require('../config/database');
 const Admin = require('./Admin');
 const PayrollPeriod = require('./PayrollPeriod');
 const SalarySlip = require('./SalarySlip');
+const Setting = require('./Setting');
 
 Admin.hasMany(PayrollPeriod, {
   as: 'uploadedPayrollPeriods',
@@ -29,4 +30,5 @@ module.exports = {
   Admin,
   PayrollPeriod,
   SalarySlip,
+  Setting,
 };

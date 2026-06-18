@@ -954,6 +954,112 @@ tbody tr:hover {
   width: 100%;
 }
 
+/* ─── Signature Settings ─── */
+.signature-panel {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 22px;
+  display: grid;
+  gap: 18px;
+  animation: slideUp 0.35s ease;
+}
+
+.signature-manager {
+  display: grid;
+  gap: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.signature-preview-box {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  padding: 18px;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.signature-preview-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.signature-preview-img {
+  max-width: 240px;
+  max-height: 110px;
+  object-fit: contain;
+  background: #ffffff;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-xs);
+  padding: 8px 12px;
+}
+
+.signature-empty-text {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0;
+}
+
+.signature-upload-form {
+  display: grid;
+  gap: 16px;
+}
+
+/* ─── Signature Hint (download tabs) ─── */
+.signature-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.signature-hint svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.signature-hint span {
+  flex: 1;
+}
+
+.signature-hint strong {
+  color: var(--text-h);
+  font-weight: 700;
+}
+
+.link-button {
+  min-height: auto;
+  padding: 2px 6px;
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  flex-shrink: 0;
+}
+
+.link-button:hover {
+  background: transparent;
+  transform: none;
+  opacity: 0.8;
+  box-shadow: none;
+}
+
 /* ─── Loading ─── */
 .loading-state {
   display: flex;

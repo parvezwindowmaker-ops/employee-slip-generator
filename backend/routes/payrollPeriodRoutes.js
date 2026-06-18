@@ -6,8 +6,25 @@ const requireAdmin = require('../middleware/requireAdmin');
 const { sequelize, PayrollPeriod, SalarySlip } = require('../models');
 const { parsePayrollWorkbook } = require('../services/payrollParser');
 const { createSlipFilename, generateSalarySlipPDF, sanitizeFilename } = require('../services/slipPdf');
+const { getSignatureDataUrl } = require('../services/signatureStore');
 
 const router = express.Router();
+
+/**
+ * Reads the `includeSignature` query flag and, when truthy, loads the stored
+ * authorized signature. Returns options consumable by generateSalarySlipPDF.
+ */
+async function resolveSignatureOptions(req) {
+  const raw = String(req.query.includeSignature ?? req.query.signature ?? '').toLowerCase();
+  const includeSignature = ['true', '1', 'yes', 'with'].includes(raw);
+
+  if (!includeSignature) {
+    return { includeSignature: false, signature: null };
+  }
+
+  const signature = await getSignatureDataUrl();
+  return { includeSignature: true, signature };
+}
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -235,6 +252,7 @@ router.get('/slips/multi-period-download', async (req, res, next) => {
       return next(error);
     }
 
+    const signatureOptions = await resolveSignatureOptions(req);
     const files = [];
 
     for (const period of periods) {
@@ -248,7 +266,7 @@ router.get('/slips/multi-period-download', async (req, res, next) => {
       if (!slip) continue;
 
       try {
-        const buffer = await generateSalarySlipPDF(slip, period);
+        const buffer = await generateSalarySlipPDF(slip, period, signatureOptions);
         files.push({
           name: createSlipFilename(slip, period),
           buffer,
@@ -337,7 +355,8 @@ router.get('/:periodId/slips/:slipId/pdf', async (req, res, next) => {
       return next(error);
     }
 
-    const pdf = await generateSalarySlipPDF(slip, period);
+    const signatureOptions = await resolveSignatureOptions(req);
+    const pdf = await generateSalarySlipPDF(slip, period, signatureOptions);
     const filename = createSlipFilename(slip, period);
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -367,13 +386,14 @@ router.get('/:periodId/slips/download', async (req, res, next) => {
       return next(error);
     }
 
+    const signatureOptions = await resolveSignatureOptions(req);
     const files = [];
 
     // Generate PDFs sequentially with proper error handling
     try {
       for (const slip of slips) {
         try {
-          const buffer = await generateSalarySlipPDF(slip, period);
+          const buffer = await generateSalarySlipPDF(slip, period, signatureOptions);
           files.push({
             name: createSlipFilename(slip, period),
             buffer,
