@@ -1,43 +1,61 @@
 const fs = require('fs');
 const path = require('path');
-const { generateSalarySlipPDF, createSlipFilename } = require('../services/slipPdf');
+const { generateSalarySlipPDF } = require('../services/slipPdf');
 
-const sampleEmployee = {
-  employeeName: 'John Doe',
-  post: 'Sales Executive',
-  totalDays: 30,
-  presentDays: 28,
-  weekOff: 2,
+const mockEmployee = {
+  employeeName: 'Kevin Gladvin Rozario',
+  serialNumber: 'ETPL112955',
+  departmentGroup: 'Human Resources',
+  post: 'Front Desk Executive',
+  bankAccount: '40890685795',
+  pfStatus: 'Yes',
+  uanNumber: '101968504183',
+  totalDays: 28,
+  presentDays: 24,
+  weekOff: 4,
   otherAllowanceDays: 0,
-  earningBasic: 20000,
-  basic: 20000,
-  hra: 3000,
-  conveyance: 800,
-  medical: 200,
-  pfEmployee: 2400,
+  basic: 7877,
+  hra: 5908,
+  meal: 0,
+  otherAllowance: 1533,
+  medical: 1250,
+  conveyance: 0,
+  specialAllowance: 0,
+  pfEmployee: 945,
   esiEmployee: 0,
   professionalTax: 200,
-  advance: 0,
   tds: 0,
-  gross: 24000,
-  netAmount: 21200,
-  otherAllowance: 0,
-  specialAllowance: 0,
+  advance: 0,
+  store: 0,
+  otherDeduction: 0,
+  gross: 22333,
+  netAmount: 21188
 };
 
-const samplePeriod = { label: 'APR-2026', month: 'APR', year: '2026' };
+const mockPeriod = {
+  label: 'Apr-2024',
+  month: '04',
+  year: '2024'
+};
 
-(async () => {
+async function run() {
   try {
-    const buffer = await generateSalarySlipPDF(sampleEmployee, samplePeriod);
-    const filename = createSlipFilename(sampleEmployee, samplePeriod);
-    const outDir = path.join(__dirname, '..', 'public', 'Salary_Slips', 'TEST');
-    if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-    const outPath = path.join(outDir, filename);
-    fs.writeFileSync(outPath, buffer);
-    console.log('Generated test PDF at:', outPath);
+    // Test 1: Without signature
+    const pdfBuffer1 = await generateSalarySlipPDF(mockEmployee, mockPeriod, { includeSignature: false });
+    fs.writeFileSync(path.join(__dirname, '..', 'test_slip_no_sig.pdf'), pdfBuffer1);
+    console.log('Successfully generated test_slip_no_sig.pdf');
+
+    // Create a dummy signature image
+    const dummySignature = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=';
+
+    // Test 2: With signature
+    const pdfBuffer2 = await generateSalarySlipPDF(mockEmployee, mockPeriod, { includeSignature: true, signature: dummySignature });
+    fs.writeFileSync(path.join(__dirname, '..', 'test_slip_with_sig.pdf'), pdfBuffer2);
+    console.log('Successfully generated test_slip_with_sig.pdf');
+
   } catch (err) {
-    console.error('Failed to generate PDF:', err);
-    process.exit(1);
+    console.error('Error generating PDF:', err);
   }
-})();
+}
+
+run();
