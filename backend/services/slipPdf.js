@@ -4,6 +4,28 @@ const path = require('path');
 
 const COMPANY_NAME = 'Nandini Herbal Care Pvt. Ltd.';
 
+/*
+ * NOTE ON FORMAT VALIDITY
+ * -----------------------
+ * The layout in this file matches the payroll Excel format / slip policy used
+ * THROUGH MAY 2026. From June 2026 onward the Excel columns and the slip policy
+ * change, which will need a new template. Until that new format is finalised we
+ * render every period with this template. `isWithinLegacyFormat(period)` is
+ * provided so a future renderer can be branched in cleanly inside
+ * generateSalarySlipPDF without touching the rest of the code.
+ */
+const FORMAT_VALID_THROUGH = { year: 2026, month: 5 }; // May 2026
+
+function isWithinLegacyFormat(period) {
+  const year = Number(period?.year);
+  const month = Number(period?.month);
+  if (!year || !month) return true; // unknown period → assume current template
+  return (
+    year < FORMAT_VALID_THROUGH.year ||
+    (year === FORMAT_VALID_THROUGH.year && month <= FORMAT_VALID_THROUGH.month)
+  );
+}
+
 function toNumber(value) {
   const parsed = Number(value || 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -14,6 +36,32 @@ function formatCurrency(amount) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
+}
+
+// Currency for table cells: blank-looking dash when zero (rows are filtered, but
+// Basic is always shown so it may legitimately be 0).
+function cellAmount(amount) {
+  return toNumber(amount) === 0 ? '-' : formatCurrency(amount);
+}
+
+function numberToWords(num) {
+  const value = Math.round(toNumber(num));
+  if (value === 0) return 'Rupees Zero Only';
+  if (value < 0) return `Minus ${numberToWords(Math.abs(value))}`;
+
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  function convert(n) {
+    if (n < 20) return ones[n];
+    if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ` ${ones[n % 10]}` : '');
+    if (n < 1000) return `${ones[Math.floor(n / 100)]} Hundred${n % 100 ? ` ${convert(n % 100)}` : ''}`;
+    if (n < 100000) return `${convert(Math.floor(n / 1000))} Thousand${n % 1000 ? ` ${convert(n % 1000)}` : ''}`;
+    if (n < 10000000) return `${convert(Math.floor(n / 100000))} Lakh${n % 100000 ? ` ${convert(n % 100000)}` : ''}`;
+    return `${convert(Math.floor(n / 10000000))} Crore${n % 10000000 ? ` ${convert(n % 10000000)}` : ''}`;
+  }
+
+  return `Rupees ${convert(value)} Only`;
 }
 
 function sanitizeFilename(name) {
@@ -32,6 +80,18 @@ function getPlainRecord(record) {
   return typeof record.toJSON === 'function' ? record.toJSON() : record;
 }
 
+// Returns the first existing company logo (PNG/JPEG — the formats PDFKit supports)
+// from backend/public, or null if none is present.
+function resolveLogoPath() {
+  const publicDir = path.join(__dirname, '..', 'public');
+  const candidates = ['logo.png', 'logo.jpg', 'logo.jpeg'];
+  for (const name of candidates) {
+    const candidate = path.join(publicDir, name);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
 function normalizeSignature(signature) {
   if (!signature) return null;
   if (Buffer.isBuffer(signature)) return signature;
@@ -44,259 +104,245 @@ function normalizeSignature(signature) {
   return null;
 }
 
-function generateSalarySlipPDF(employeeRecord, periodRecord, options = {}) {
-  const employee = getPlainRecord(employeeRecord);
-  const period = getPlainRecord(periodRecord);
+/**
+ * Salary slip template valid through May 2026.
+ *
+ * @param {object} employee - plain salary-slip record (mirrors the Excel columns)
+ * @param {object} period - plain payroll-period record
+ * @param {object} options - { includeSignature, signature }
+ */
+function renderSlipThroughMay2026(employee, period, options) {
   const signatureBuffer = options.includeSignature ? normalizeSignature(options.signature) : null;
   const includeSignature = Boolean(signatureBuffer);
 
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 20 });
+    const doc = new PDFDocument({ size: 'A4', margin: 30 });
     const chunks = [];
     doc.on('data', (chunk) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    // --- Header Section ---
-    const leftMargin = 20;
-    const rightMargin = 20;
-    const pageWidth = doc.page.width - leftMargin - rightMargin;
-    
-    // Header Texts
-    doc.fontSize(11).font('Helvetica-Bold').fillColor('#000000').text(COMPANY_NAME, leftMargin, 30);
-    doc.fontSize(8).font('Helvetica').text('Regd. Office:', leftMargin, 45);
-    doc.text('S-201, Signature Complex, Nr.Zydus hospital,', leftMargin, 55);
-    doc.text('Hebatpur Road, Thaltej, Ahmedabad-380054 Gujarat India.', leftMargin, 65);
-    doc.fillColor('blue').text('https://www.nandiniherbalcare.com/', leftMargin, 75);
-    doc.fillColor('#000000').text('+91 99988 74048 | info@nandiniherbalcare.com', leftMargin, 85);
+    const left = 30;
+    const pageW = doc.page.width - left * 2;
+    const rightX = left + pageW;
+    const border = '#9aa3ad';
 
-    // Try to embed a logo if available at public/logo.png
-    const logoPath = path.join(__dirname, '..', 'public', 'logo.png');
-    if (fs.existsSync(logoPath)) {
-      doc.image(logoPath, doc.page.width - rightMargin - 150, 30, { fit: [150, 60], align: 'right' });
-    } else {
-      // Placeholder for logo
-      doc.fontSize(20).font('Helvetica-Bold').fillColor('green').text('NANDINI', doc.page.width - rightMargin - 150, 45, { width: 150, align: 'right' });
-      doc.fontSize(10).font('Helvetica').fillColor('black').text('HERBAL', doc.page.width - rightMargin - 150, 65, { width: 150, align: 'right' });
+    // ───────────────────────── Header ─────────────────────────
+    doc.fontSize(14).font('Helvetica-Bold').fillColor('#111827').text(COMPANY_NAME, left, 32);
+    doc.fontSize(8).font('Helvetica').fillColor('#4b5563');
+    doc.text('S-201, Signature Complex, Nr. Zydus Hospital, Hebatpur Road,', left, 50);
+    doc.text('Thaltej, Ahmedabad - 380054, Gujarat, India', left, 61);
+    doc.text('info@nandiniherbalcare.com   |   +91 99988 74048', left, 72);
+
+    const logoPath = resolveLogoPath();
+    let logoEmbedded = false;
+    if (logoPath) {
+      try {
+        const logoW = 155;
+        const logoH = 58;
+        doc.image(logoPath, rightX - logoW, 30, { fit: [logoW, logoH], align: 'right', valign: 'top' });
+        logoEmbedded = true;
+      } catch { /* ignore bad logo, fall back to text */ }
+    }
+    if (!logoEmbedded) {
+      doc.fontSize(16).font('Helvetica-Bold').fillColor('#2e7d32').text('NANDINI', rightX - 150, 38, { width: 150, align: 'right' });
+      doc.fontSize(9).font('Helvetica').fillColor('#6b7280').text('HERBAL CARE', rightX - 150, 58, { width: 150, align: 'right' });
     }
 
-    doc.moveDown(2);
-    
-    // Title
-    doc.fontSize(12).font('Helvetica-Bold').fillColor('blue').text(`Pay Slip For The Month of ${period.label || ''}`, leftMargin, 110, { align: 'center', width: pageWidth });
+    let y = 92;
+    doc.lineWidth(1).strokeColor(border).moveTo(left, y).lineTo(rightX, y).stroke();
 
-    // --- Helper for drawing cells ---
-    function drawCell(x, y, w, h, text, isBold = false, align = 'left', fillColor = 'black') {
-      doc.rect(x, y, w, h).stroke();
-      if(text !== undefined && text !== null) {
-        doc.font(isBold ? 'Helvetica-Bold' : 'Helvetica').fontSize(8).fillColor(fillColor);
-        // padding
-        const textY = y + (h - 8) / 2 - 1; 
-        doc.text(String(text), x + 4, textY, { width: w - 8, align: align });
-      }
-    }
+    // ───────────────────────── Title ─────────────────────────
+    y += 8;
+    doc.fontSize(11).font('Helvetica-Bold').fillColor('#111827')
+      .text(`Pay Slip for ${period.label || `${period.month}/${period.year}`}`, left, y, { align: 'center', width: pageW });
+    y += 22;
 
-    function drawCellNoBorder(x, y, w, h, label, value) {
-       doc.font('Helvetica-Bold').fontSize(8).fillColor('black').text(label, x + 4, y + (h-8)/2 - 1);
-       doc.font('Helvetica').fontSize(8).fillColor('black').text(value || '-', x + 75, y + (h-8)/2 - 1, { width: w - 80, ellipsis: true });
-    }
-
-    let y = 135;
     const rowH = 18;
-    
-    // --- Employee Details Block ---
-    doc.rect(leftMargin, y, pageWidth, rowH * 5).stroke();
-    
-    // Row 1 Above Table
-    doc.font('Helvetica-Bold').fontSize(8).fillColor('black');
-    doc.text(`Payroll process date : ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-')}`, leftMargin + 4, y - 10);
-    doc.text(`Hire Date : -`, leftMargin + pageWidth - 100, y - 10, { width: 100, align: 'right' });
 
-    const colW1 = pageWidth * 0.4;
-    const colW2 = pageWidth * 0.35;
-    const colW3 = pageWidth * 0.25;
+    // ─────────────────── Employee details ───────────────────
+    const detailRows = [
+      [['Name', employee.employeeName], ['Emp Id', employee.serialNumber || '-']],
+      [['Designation', employee.post || '-'], ['Department', employee.departmentGroup || '-']],
+      [['Bank A/C No', employee.bankAccount || '-'], ['UAN', employee.uanNumber || '-']],
+      [['PF Status', employee.pfEligible ? 'Yes' : 'No'], ['Days (P/Total)', `${formatCurrency(employee.presentDays)} / ${formatCurrency(employee.totalDays)}`]],
+    ];
+    const detailColW = pageW / 2;
+    const detailLabelW = 95;
+    const detailTop = y;
+    const detailH = rowH * detailRows.length;
 
-    // Draw inner vertical lines
-    doc.moveTo(leftMargin + colW1, y).lineTo(leftMargin + colW1, y + rowH * 5).stroke();
-    doc.moveTo(leftMargin + colW1 + colW2, y).lineTo(leftMargin + colW1 + colW2, y + rowH * 5).stroke();
-    
-    // Draw horizontal lines inside block
-    for(let i=1; i<5; i++) {
-        doc.moveTo(leftMargin, y + i*rowH).lineTo(leftMargin + pageWidth, y + i*rowH).stroke();
-    }
+    doc.lineWidth(0.8).strokeColor(border);
+    doc.rect(left, detailTop, pageW, detailH).stroke();
+    doc.moveTo(left + detailColW, detailTop).lineTo(left + detailColW, detailTop + detailH).stroke();
 
-    // Row 1
-    drawCellNoBorder(leftMargin, y, colW1, rowH, 'Name :', employee.employeeName);
-    drawCellNoBorder(leftMargin + colW1, y, colW2, rowH, 'Bank A/C No :', employee.bankAccount);
-    drawCellNoBorder(leftMargin + colW1 + colW2, y, colW3, rowH, 'No Of Days :', employee.totalDays);
+    detailRows.forEach((pair, i) => {
+      const ry = detailTop + i * rowH;
+      if (i > 0) doc.moveTo(left, ry).lineTo(rightX, ry).stroke();
+      pair.forEach(([label, value], c) => {
+        const cx = left + c * detailColW;
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#374151')
+          .text(label, cx + 6, ry + 5, { width: detailLabelW - 8, lineBreak: false });
+        doc.font('Helvetica').fontSize(8).fillColor('#111827')
+          .text(String(value ?? '-'), cx + detailLabelW, ry + 5, { width: detailColW - detailLabelW - 8, lineBreak: false, ellipsis: true });
+      });
+    });
+    y = detailTop + detailH + 14;
 
-    // Row 2
-    y += rowH;
-    drawCellNoBorder(leftMargin, y, colW1, rowH, 'Emp Id :', employee.serialNumber || '-');
-    drawCellNoBorder(leftMargin + colW1, y, colW2, rowH, 'PF A/C No :', employee.pfStatus === 'Yes' ? 'YES' : '-');
-    drawCellNoBorder(leftMargin + colW1 + colW2, y, colW3, rowH, 'Full/Part Timer :', 'Full Timer');
-
-    // Row 3
-    y += rowH;
-    drawCellNoBorder(leftMargin, y, colW1, rowH, 'Department :', employee.departmentGroup);
-    drawCellNoBorder(leftMargin + colW1, y, colW2, rowH, 'ESIC A/C No :', '-');
-    drawCellNoBorder(leftMargin + colW1 + colW2, y, colW3, rowH, 'Location :', '-');
-
-    // Row 4
-    y += rowH;
-    drawCellNoBorder(leftMargin, y, colW1, rowH, 'Designation :', employee.post);
-    drawCellNoBorder(leftMargin + colW1, y, colW2, rowH, '', '');
-    drawCellNoBorder(leftMargin + colW1 + colW2, y, colW3, rowH, 'UAN :', employee.uanNumber);
-
-    y += rowH * 1.5; // Move past the block
-
-    // --- Salary Table ---
-    // Table Header
-    const colEarning = pageWidth * 0.35;
-    const colAmtE = pageWidth * 0.15;
-    const colDed = pageWidth * 0.35;
-    const colAmtD = pageWidth * 0.15;
-
-    // Earning / Deduction Headers
-    drawCell(leftMargin, y, colEarning, rowH, 'Earning', true, 'left', 'black');
-    drawCell(leftMargin + colEarning, y, colAmtE, rowH, 'Amount in Rs.', true, 'right', 'black');
-    drawCell(leftMargin + colEarning + colAmtE, y, colDed, rowH, 'Deduction', true, 'left', 'black');
-    drawCell(leftMargin + colEarning + colAmtE + colDed, y, colAmtD, rowH, 'Amount in Rs.', true, 'right', 'black');
-
-    y += rowH;
-
+    // ─────────────── Earnings / Deductions (real Excel fields only) ───────────────
+    const presentRatio = toNumber(employee.totalDays) > 0 ? toNumber(employee.totalDays) / 30 : 1;
     const earnings = [
       ['Basic', employee.earningBasic || employee.basic],
-      ['HRA', (toNumber(employee.hra) * toNumber(employee.totalDays)) / 30],
-      ['Advanced Bonus', 0],
-      ['Meal Pass', employee.meal],
+      ['HRA', toNumber(employee.hra) * presentRatio],
+      ['Conveyance', toNumber(employee.conveyance) * presentRatio],
+      ['Medical', toNumber(employee.medical) * presentRatio],
+      ['Special Allowance', employee.specialAllowance],
       ['Other Allowance', employee.otherAllowance],
-      ['Medical Allowance', (toNumber(employee.medical) * toNumber(employee.totalDays)) / 30],
-      ['Emp. Cont. NPS', 0],
-      ['Uniform Allowance', 0],
-      ['Mobile / Telephone Allowance', 0],
-      ['Loyalty Bonus', 0],
-      ['Canteen Subsidy', 0],
-      ['Shift Differential Allowance', 0],
-      ['Conveyance', (toNumber(employee.conveyance) * toNumber(employee.totalDays)) / 30],
-      ['Special Allowance', (toNumber(employee.specialAllowance) * toNumber(employee.totalDays)) / 30],
-    ].filter(e => e[1] || e[0] === 'Basic' || e[0] === 'HRA' || e[0] === 'Advanced Bonus' || e[0] === 'Meal Pass' || e[0] === 'Other Allowance' || e[0] === 'Medical Allowance' || e[0] === 'Emp. Cont. NPS' || e[0] === 'Uniform Allowance' || e[0] === 'Mobile / Telephone Allowance' || e[0] === 'Loyalty Bonus' || e[0] === 'Canteen Subsidy' || e[0] === 'Shift Differential Allowance');
+    ].filter(([label, val]) => label === 'Basic' || toNumber(val) > 0);
 
     const deductions = [
       ['P.F.', employee.pfEmployee],
-      ['ESIC', employee.esiEmployee],
-      ['Food Exp', 0],
-      ['Prof Tax', employee.professionalTax],
+      ['E.S.I.', employee.esiEmployee],
+      ['Professional Tax', employee.professionalTax],
       ['T.D.S.', employee.tds],
       ['Loan / Advance', employee.advance],
+      ['Meal', employee.meal],
       ['Store', employee.store],
       ['Other Deduction', employee.otherDeduction],
-    ].filter(d => d[1] || d[0] === 'P.F.' || d[0] === 'ESIC' || d[0] === 'Food Exp' || d[0] === 'Prof Tax' || d[0] === 'T.D.S.' || d[0] === 'Other Deduction');
+    ].filter(([, val]) => toNumber(val) > 0);
 
-    const maxRows = Math.max(earnings.length, deductions.length);
-    const tableHeight = maxRows * 14;
+    const half = pageW / 2;
+    const amtW = 90;
+    const nameW = half - amtW;
+    const headH = 18;
+    const bodyRowH = 16;
+    const nRows = Math.max(earnings.length, deductions.length, 1);
 
-    // Draw outer borders for the data section
-    doc.rect(leftMargin, y, colEarning, tableHeight).stroke();
-    doc.rect(leftMargin + colEarning, y, colAmtE, tableHeight).stroke();
-    doc.rect(leftMargin + colEarning + colAmtE, y, colDed, tableHeight).stroke();
-    doc.rect(leftMargin + colEarning + colAmtE + colDed, y, colAmtD, tableHeight).stroke();
+    const earnAmtX = left + nameW;
+    const dedNameX = left + half;
+    const dedAmtX = left + half + nameW;
 
-    for(let i=0; i<maxRows; i++) {
-        const lineY = y + i * 14;
-        
-        if (earnings[i]) {
-            doc.font('Helvetica-Bold').fontSize(8).fillColor('black').text(earnings[i][0], leftMargin + 4, lineY + 3);
-            doc.font('Helvetica').fontSize(8).text(toNumber(earnings[i][1]) === 0 ? '0' : formatCurrency(earnings[i][1]), leftMargin + colEarning - 4, lineY + 3, { width: colAmtE - 4, align: 'right' });
-        }
-        
-        if (deductions[i]) {
-            doc.font('Helvetica-Bold').fontSize(8).fillColor('black').text(deductions[i][0], leftMargin + colEarning + colAmtE + 4, lineY + 3);
-            doc.font('Helvetica').fontSize(8).text(toNumber(deductions[i][1]) === 0 ? '0' : formatCurrency(deductions[i][1]), leftMargin + colEarning + colAmtE + colDed - 4, lineY + 3, { width: colAmtD - 4, align: 'right' });
-        }
+    // Header band
+    doc.rect(left, y, pageW, headH).fillAndStroke('#eef2f5', border);
+    doc.moveTo(dedNameX, y).lineTo(dedNameX, y + headH).strokeColor(border).stroke();
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#111827');
+    doc.text('Earnings', left + 6, y + 5, { width: nameW - 10 });
+    doc.text('Amount (Rs.)', earnAmtX, y + 5, { width: amtW - 6, align: 'right' });
+    doc.text('Deductions', dedNameX + 6, y + 5, { width: nameW - 10 });
+    doc.text('Amount (Rs.)', dedAmtX, y + 5, { width: amtW - 6, align: 'right' });
+    y += headH;
+
+    // Body grid
+    const bodyTop = y;
+    const bodyH = nRows * bodyRowH;
+    doc.lineWidth(0.8).strokeColor(border);
+    doc.rect(left, bodyTop, pageW, bodyH).stroke();
+    doc.moveTo(earnAmtX, bodyTop).lineTo(earnAmtX, bodyTop + bodyH).stroke();
+    doc.moveTo(dedNameX, bodyTop).lineTo(dedNameX, bodyTop + bodyH).stroke();
+    doc.moveTo(dedAmtX, bodyTop).lineTo(dedAmtX, bodyTop + bodyH).stroke();
+
+    for (let i = 0; i < nRows; i++) {
+      const ry = bodyTop + i * bodyRowH + 4;
+      if (earnings[i]) {
+        doc.font('Helvetica').fontSize(8).fillColor('#1f2937').text(earnings[i][0], left + 6, ry, { width: nameW - 12, lineBreak: false, ellipsis: true });
+        doc.text(cellAmount(earnings[i][1]), earnAmtX, ry, { width: amtW - 6, align: 'right', lineBreak: false });
+      }
+      if (deductions[i]) {
+        doc.font('Helvetica').fontSize(8).fillColor('#1f2937').text(deductions[i][0], dedNameX + 6, ry, { width: nameW - 12, lineBreak: false, ellipsis: true });
+        doc.text(cellAmount(deductions[i][1]), dedAmtX, ry, { width: amtW - 6, align: 'right', lineBreak: false });
+      }
     }
+    y = bodyTop + bodyH;
 
-    y += tableHeight;
+    // Totals row (totals taken straight from the Excel)
+    const totalDeductions = toNumber(employee.totalDeductions) || deductions.reduce((sum, d) => sum + toNumber(d[1]), 0);
+    doc.rect(left, y, pageW, headH).fillAndStroke('#f3f4f6', border);
+    doc.moveTo(dedNameX, y).lineTo(dedNameX, y + headH).strokeColor(border).stroke();
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#111827');
+    doc.text('Total Earnings', left + 6, y + 5, { width: nameW - 10 });
+    doc.text(formatCurrency(employee.gross), earnAmtX, y + 5, { width: amtW - 6, align: 'right' });
+    doc.text('Total Deductions', dedNameX + 6, y + 5, { width: nameW - 10 });
+    doc.text(formatCurrency(totalDeductions), dedAmtX, y + 5, { width: amtW - 6, align: 'right' });
+    y += headH;
 
-    // Totals Row
-    drawCell(leftMargin, y, colEarning, rowH, 'Total Earning', true, 'left');
-    drawCell(leftMargin + colEarning, y, colAmtE, rowH, formatCurrency(employee.gross), true, 'right');
-    drawCell(leftMargin + colEarning + colAmtE, y, colDed, rowH, 'Total Deduction', true, 'left');
-    
-    const totalDeductions = deductions.reduce((sum, item) => sum + toNumber(item[1]), 0);
-    drawCell(leftMargin + colEarning + colAmtE + colDed, y, colAmtD, rowH, formatCurrency(totalDeductions), true, 'right');
+    // Net Pay band (full width)
+    doc.rect(left, y, pageW, 20).fillAndStroke('#dcfce7', border);
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#111827');
+    doc.text('Net Pay', left + 6, y + 6, { width: 200 });
+    doc.text(`Rs. ${formatCurrency(employee.netAmount)}`, rightX - amtW - 6, y + 6, { width: amtW, align: 'right' });
+    y += 20;
 
-    y += rowH;
+    // Amount in words
+    doc.font('Helvetica-Oblique').fontSize(8).fillColor('#374151')
+      .text(`In words: ${numberToWords(employee.netAmount)}`, left + 2, y + 6, { width: pageW - 4 });
+    y += 26;
 
-    // Net Pay Row
-    doc.rect(leftMargin, y, colEarning + colAmtE + colDed + colAmtD, rowH).fillAndStroke('#e0f7e0', 'black');
-    doc.font('Helvetica-Bold').fontSize(8).fillColor('black').text('Net Pay', leftMargin + 4, y + 4);
-    doc.text(formatCurrency(employee.netAmount), leftMargin + colEarning - 4, y + 4, { width: colAmtE - 4, align: 'right' });
-    
-    y += rowH * 1.5;
-    
-    // Leave Information
-    doc.rect(leftMargin, y, pageWidth, rowH).stroke();
-    doc.font('Helvetica-Bold').fontSize(8).fillColor('black').text('Leave Information', leftMargin, y + 4, { align: 'center', width: pageWidth });
-    
-    y += rowH;
+    // ─────────────── Attendance summary (compact) ───────────────
+    const leaves = Math.max(0,
+      toNumber(employee.totalDays) - toNumber(employee.presentDays) - toNumber(employee.weekOff) - toNumber(employee.otherAllowanceDays));
+    const attendance = [
+      ['Total Days', formatCurrency(employee.totalDays)],
+      ['Present', formatCurrency(employee.presentDays)],
+      ['Week Off', formatCurrency(employee.weekOff)],
+      ['Paid Leaves', formatCurrency(leaves)],
+    ];
+    const attColW = pageW / attendance.length;
+    const attTop = y;
+    doc.lineWidth(0.8).strokeColor(border);
+    doc.rect(left, attTop, pageW, rowH * 2).stroke();
+    doc.moveTo(left, attTop + rowH).lineTo(rightX, attTop + rowH).stroke();
+    attendance.forEach(([label, value], i) => {
+      const cx = left + i * attColW;
+      if (i > 0) doc.moveTo(cx, attTop).lineTo(cx, attTop + rowH * 2).stroke();
+      doc.font('Helvetica-Bold').fontSize(8).fillColor('#374151').text(label, cx, attTop + 5, { width: attColW, align: 'center' });
+      doc.font('Helvetica').fontSize(8).fillColor('#111827').text(String(value), cx, attTop + rowH + 5, { width: attColW, align: 'center' });
+    });
+    y = attTop + rowH * 2 + 28;
 
-    const leaveCols = 6;
-    const lColW = pageWidth / leaveCols;
-    const leaveHeaders = ['Days', 'Casual Leave', 'Sick Leave', 'Privilege Leave', 'Unpaid Leave', 'FFH'];
-    
-    for(let i=0; i<leaveCols; i++) {
-        drawCell(leftMargin + i*lColW, y, lColW, rowH, leaveHeaders[i], true, 'center');
-    }
-    y += rowH;
-
-    const unpaidLeaves = Math.max(0, toNumber(employee.totalDays) - toNumber(employee.presentDays) - toNumber(employee.weekOff) - toNumber(employee.otherAllowanceDays));
-    const fullHalf = ['Full / Half', '0', '0', '0', unpaidLeaves, '0'];
-    for(let i=0; i<leaveCols; i++) {
-        drawCell(leftMargin + i*lColW, y, lColW, rowH, String(fullHalf[i]), false, 'center');
-    }
-    y += rowH;
-
-    const remaining = ['Remaining', '0', '0', '0', '-', '0'];
-    for(let i=0; i<leaveCols; i++) {
-        drawCell(leftMargin + i*lColW, y, lColW, rowH, String(remaining[i]), false, 'center');
-    }
-    y += rowH + 10;
-
-    // Notes
-    doc.font('Helvetica-Bold').fontSize(8).fillColor('black').text('Notes :', leftMargin, y);
-    y += 10;
-    doc.font('Helvetica').fontSize(7);
-    doc.text('A. Transport Allowance where ever applicable, shall be paid to the employee, based on no. of days attending the office, during the month.', leftMargin + 10, y);
-    y += 10;
-    doc.text('B. Duplicate payslip will not be issued.', leftMargin + 10, y);
-
-    y += 30;
-
-    // Signature Area
-    const sigW = 150;
-    const sigH = 40;
-    const sigX = leftMargin + pageWidth - sigW;
-    
+    // ───────────────────────── Signature ─────────────────────────
+    const sigW = 170;
+    const sigX = rightX - sigW;
     if (includeSignature) {
-        try {
-            // position the image relative to the signature text
-            doc.image(signatureBuffer, sigX, y - sigH, { fit: [sigW, sigH], align: 'right' });
-        } catch { }
-        doc.font('Helvetica').fontSize(8).text('Authorized Signatory', sigX, y + 5, { width: sigW, align: 'right' });
+      try {
+        doc.image(signatureBuffer, sigX, y, { fit: [sigW, 44], align: 'right' });
+      } catch { /* ignore bad signature image */ }
+      const lineY = y + 48;
+      doc.lineWidth(0.8).strokeColor(border).moveTo(sigX, lineY).lineTo(rightX, lineY).stroke();
+      doc.font('Helvetica-Bold').fontSize(8).fillColor('#111827').text('Authorized Signatory', sigX, lineY + 4, { width: sigW, align: 'center' });
     } else {
-        doc.font('Helvetica').fontSize(8).text('Computer generated Pay Slip hence signature is not required.', sigX - 100, y, { width: sigW + 100, align: 'right' });
+      doc.font('Helvetica-Oblique').fontSize(8).fillColor('#6b7280')
+        .text('This is a computer-generated pay slip and does not require a signature.', left, y + 28, { width: pageW, align: 'right' });
     }
 
-    // Footer
-    doc.font('Helvetica').fontSize(8).fillColor('black').text('(An ISO 9001:2015 Company)', leftMargin, doc.page.height - 40, { align: 'center', width: pageWidth });
+    // ───────────────────────── Footer ─────────────────────────
+    doc.font('Helvetica').fontSize(8).fillColor('#4b5563')
+      .text('(An ISO 9001:2015 Certified Company)', left, doc.page.height - 40, { align: 'center', width: pageW });
 
     doc.end();
   });
+}
+
+/**
+ * @param {object} employeeRecord
+ * @param {object} periodRecord
+ * @param {object} [options]
+ * @param {boolean} [options.includeSignature] - whether to print the authorized signature
+ * @param {Buffer|string} [options.signature] - signature image (Buffer or base64 data URL)
+ */
+function generateSalarySlipPDF(employeeRecord, periodRecord, options = {}) {
+  const employee = getPlainRecord(employeeRecord);
+  const period = getPlainRecord(periodRecord);
+
+  // Through May 2026 every period uses the template below. When the post-May-2026
+  // Excel/policy is finalised, branch here on isWithinLegacyFormat(period) to pick
+  // the appropriate renderer.
+  return renderSlipThroughMay2026(employee, period, options);
 }
 
 module.exports = {
   createSlipFilename,
   generateSalarySlipPDF,
   sanitizeFilename,
+  isWithinLegacyFormat,
+  FORMAT_VALID_THROUGH,
 };
